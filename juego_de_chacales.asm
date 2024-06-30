@@ -1,9 +1,15 @@
 .data
-	#.align 2
-	board:      .word 0:12      # Tablero de 12 casillas
-	premios:   .word 8
-	chacales:   .word 4
+	buffer: .space 256
+	board:      .word 0:12	# arreglo de 12 casillas
+	status:     .word 0:12      # Estado de las casillas (0 = oculta, 1 = descubierta)
+	tesoros:   .word 8	# número de tesoros
+	chacales:   .word 4	# número de chacales
+	dinero:     .word 0        # Dinero ganado
+	chacales_enc: .word 0      # Chacales encontrados
+	num_descubiertas: .word 0  # Número de casillas descubiertas
 	
+	separator: .asciiz " | "	# Separador entre elementos
+	newline: .asciiz "\n"		# Nueva línea al final
 	msg_intro:  .asciiz "Bienvenido al Juego de Chacales\n"
 	msg_ganar:  .asciiz "Has ganado $"
 	msg_perder: .asciiz "Has perdido. Encontraste todos los chacales\n"
@@ -12,6 +18,8 @@
 	msg_dinero: .asciiz "Dinero acumulado: $"
 	msg_chacales: .asciiz "Chacales encontrados: "
 	msg_girar: .asciiz "Girar Dado (s/n): "
+	msg_salida: .asciiz "Vuelva a jugar pronto..."
+	msg_invalida: .asciiz "Entrada no válida, vuelva a intentarlo\n"
 
 .text
 main: 
@@ -20,80 +28,157 @@ main:
     	li $v0, 4
     	syscall
     	jal init_board
-    	j print #cambiarse por jal para seguir implementando
+
 juego:
-	#jal display_board	#mostrar tablero
-	#jal get_input		#obtener entrada
+	jal display_board	#mostrar tablero
+	jal get_input		#obtener entrada
 	
-	#jal check_move
+	# Procesar el movimiento
+	jal check_move
 	
+	# Verificar si el jugador ha ganado o perdido
+	lw $t0, tesoros
+    	lw $t1, chacales_enc
+    	lw $t2, num_descubiertas
+    	bge $t2, 12, fin_perder    # Si todas las casillas están descubiertas y no ha ganado, pierde
+    	bge $t1, 4, fin_perder     # Si encontró todos los chacales, pierde
+    	blt $t0, 4, juego          # Si aún no ha encontrado 4 tesoros, continúa jugando
+    	
+    	# Si ha encontrado 4 tesoros, preguntar si quiere continuar
+    	li $v0, 4
+    	la $a0, msg_continuar
+    	syscall
+    	
+    	la $a0, buffer
+    	li $a1, 256
+    	li $v0, 8
+    	syscall
+    
+    	lb $t3, 0($a0)
+    
+    	beq $t3, 's', juego
+    	beq $t3, 'n', fin_ganar
 		
+fin_ganar:
+	li $v0, 4
+    	la $a0, msg_ganar
+    	syscall
+    	lw $a0, dinero
+    	li $v0, 1
+    	syscall
+    	j fin
+
+fin_perder:
+	li $v0, 4
+    	la $a0, msg_perder
+    	syscall
+    	j fin
+
+fin_salir:
+	li $v0, 4
+	la $a0, msg_salida 
+	syscall
+fin:
+	# Finalizar el programa
+    	li $v0, 10
+    	syscall
+				
 # Inicializar el tablero con chacales y tesoros
 init_board:
-    lw $t0, premios	# $t0 = 8 (premios)
-    lw $t1, chacales
-    li $t2, 2
-    #add $t2, $t0, $t1    # $t2 = total de elementos a distribuir (12)
-    la $t3, board
-    # Llenar el arreglo con premios y chacales en posiciones aleatorias
-    li $t4, 12
+	lw $t0, tesoros	
+	lw $t1, chacales  
+    	li $t2, 2
+    	la $t3, board
+    	li $t4, 12
     
 init_loop:
-    li $v0, 42              # Llamar al generador de números aleatorios
-    move $a1, $t2        # Argumento para el número aleatorio (total de elementos)
-    syscall              # Generar número aleatorio
-    move $t5, $a0        # $t5 = número aleatorio
+	li $v0, 42           # Llamar al generador de números aleatorios
+    	move $a1, $t2        # Argumento para el número aleatorio (total de elementos)
+    	syscall              # Generar número aleatorio
+    	move $t5, $a0        # $t5 = número aleatorio
     
-    # Determinar si colocar premio (dinero) o chacal (trampa)
-    beq $t5,$zero,place_chacal
-    beq $t0, $zero, place_chacal  # Si $t0 (premios restantes) es >= 0, colocar una mina
-    li $v0, 42              # Llamar al generador de números aleatorios
-    li $a1, 10        # Argumento para el número aleatorio (total de elementos)
-    syscall              # Generar número aleatorio
-    move $t5, $a0
-    addi $t5,$t5,1
-    mul $t5,$t5,10
-    sw $t5, 0($t3)       # Guardar una mina en el arreglo en la posición aleatoria
-    addi $t0, $t0, -1    # Decrementar contador de minas restantes
-    b end_fill           # Saltar al final del bucle
+    	# Determinar si colocar premio (dinero) o chacal (trampa)
+    	beq $t5,$zero,place_chacal
+    	beq $t0, $zero, place_chacal  # Si $t0 (tesoros restantes) es >= 0, colocar una chacal
+    	li $t5,100
+    	sw $t5, 0($t3)       # Guardar un chacal en el arreglo en la posición aleatoria
+    	addi $t0, $t0, -1    # Decrementar contador de chacales restantes
+    	b end_fill           # Saltar al final del bucle
     
 place_chacal:
-    beq $t1, $zero, init_loop
-    li $t5, -1
-    sw $t5, 0($t3)       # Guardar un premio en el arreglo en la posición aleatoria
-    addi $t1, $t1, -1    # Decrementar contador de premios restantes
+	beq $t1, $zero, init_loop
+    	li $t5, -1
+    	sw $t5, 0($t3)       # Guardar un premio en el arreglo en la posición aleatoria
+	addi $t1, $t1, -1    # Decrementar contador de tesoros restantes
 
 end_fill:
-    addi $t3, $t3, 4     # Mover al siguiente elemento del arreglo
-    addi $t4, $t4, -1    # Decrementar contador de iteraciones del bucle
-    bnez $t4, init_loop # Si no se ha llenado todo el arreglo, repetir el bucle
+	addi $t3, $t3, 4     # Mover al siguiente elemento del arreglo
+    	addi $t4, $t4, -1    # Decrementar contador de iteraciones del bucle
+    	bnez $t4, init_loop # Si no se ha llenado todo el arreglo, repetir el bucle
+    	jr $ra
+
+# Mostrar el tablero
+display_board:
+	la $t0, board
+	la $t1, status
+	
+	li $t2, 0
+display_loop:
+    	bge $t2, 12, display_end
+    	
+    	lw $a0, 0($t1)       # Cargar el elemento actual del arreglo en $a0
+    	li $v0, 1            # syscall para imprimir entero
+    	syscall
+    	
+    	addi $t2, $t2, 1     # Incrementar el índice del arreglo
     
-    jr $ra
+    	bge $t2, $t0, skip_separator   # Si es el último elemento, saltar la impresión del separador
+    
+    	la $a0, separator    # Cargar el separador entre elementos
+    	li $v0, 4            # syscall para imprimir string
+    	syscall
+    	
+skip_separator:
+    	addi $t1, $t1, 4     # Mover el puntero al siguiente elemento del arreglo
+    	j display_loop         # Repetir el bucle
+    	
+display_end:
+	la $a0, newline      # Imprimir una nueva línea al final
+    	li $v0, 4            # syscall para imprimir string
+    	syscall
+    	jr $ra
+    	
 
-print: #Imprimir el contenido del arreglo
-    la $t0, board       # Cargar la dirección base del arreglo en $t0
-    li $t1, 12          # Contador para el bucle (número de elementos del arreglo)
-
-print_loop:
-    lw $a0, 0($t0)      # Cargar el valor del arreglo en $a0
-    li $v0, 1           # syscall 1: imprimir entero
-    syscall             # Llamar a la syscall para imprimir el valor en $a0
-
-    # Imprimir un espacio después de cada número (opcional para claridad)
-    li $v0, 11          # syscall 11: imprimir carácter
-    li $a0, ' '         # Cargar el carácter espacio en $a0
-    syscall             # Llamar a la syscall para imprimir un espacio
-
-    addi $t0, $t0, 4    # Avanzar al siguiente elemento del arreglo (4 bytes = tamaño de una palabra)
-    addi $t1, $t1, -1   # Decrementar contador de iteraciones del bucle
-    bnez $t1, print_loop    # Si no se ha imprimido todo el arreglo, repetir el bucle
-
-    # Imprimir un salto de línea al final (opcional para claridad)
-    li $v0, 11          # syscall 11: imprimir carácter
-    li $a0, '\n'        # Cargar el carácter de nueva línea en $a0
+# Obtener la entrada del usuario y girar dado
+get_input:
+    li $v0, 4
+    la $a0, msg_girar
     syscall
     
-    
-    li $v0, 10
+    la $a0, buffer
+    li $a1, 256
+    li $v0, 8
     syscall
-     #jr $ra quitar este comentario por el jal print del main
+    
+    lb $t3, 0($a0)
+    
+    beq $t3, 's', generar_numero
+    beq $t3, 'n', fin_salir
+    
+    # Si la entrada no es ni 's' ni 'n', imprimir mensaje de error y finalizar
+    li $v0, 4
+    la $a0, msg_invalida
+    syscall
+    j get_input
+
+generar_numero:
+	li $v0, 42           # Llamar al generador de números aleatorios
+    	li $a1, 12        # Argumento para el número aleatorio (total de elementos)
+    	syscall              # Generar número aleatorio
+    	move $v0, $a0
+    	jr $ra
+
+# Verificar el movimiento del usuario (COMPLETAR)
+check_move:
+    	
+    	
