@@ -6,6 +6,7 @@
 	chacales:   .word 4	# número de chacales
 	dinero:     .word 0        # Dinero ganado
 	chacales_enc: .word 0      # Chacales encontrados
+	tesoros_enc: .word 0	   # Tesoros encontrado
 	num_descubiertas: .word 0  # Número de casillas descubiertas
 	
 	separator: .asciiz " | "	# Separador entre elementos
@@ -37,7 +38,7 @@ juego:
 	jal check_move
 	
 	# Verificar si el jugador ha ganado o perdido
-	lw $t0, tesoros
+	lw $t0, tesoros_enc
     	lw $t1, chacales_enc
     	lw $t2, num_descubiertas
     	bge $t2, 12, fin_perder    # Si todas las casillas están descubiertas y no ha ganado, pierde
@@ -180,5 +181,10 @@ generar_numero:
 
 # Verificar el movimiento del usuario (COMPLETAR)
 check_move:
+    	add $t0,$t0, $v0
+    	move $a0,$v0
+      	li $v0, 1
+    	syscall
     	
+    	jr $ra
     	
