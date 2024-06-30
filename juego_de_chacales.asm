@@ -8,6 +8,7 @@
 	chacales_enc: .word 0      # Chacales encontrados
 	tesoros_enc: .word 0	   # Tesoros encontrado
 	num_descubiertas: .word 0  # Número de casillas descubiertas
+	num_dados_rep: .word 0
 	
 	separator: .asciiz " | "	# Separador entre elementos
 	newline: .asciiz "\n"		# Nueva línea al final
@@ -100,17 +101,17 @@ init_loop:
     
     	# Determinar si colocar premio (dinero) o chacal (trampa)
     	beq $t5,$zero,place_chacal
-    	beq $t0, $zero, place_chacal  # Si $t0 (tesoros restantes) es >= 0, colocar una chacal
+    	beq $t0, $zero, place_chacal  # Si $t0 (tesoros restantes) es <= 0, colocar una chacal
     	li $t5,100
-    	sw $t5, 0($t3)       # Guardar un chacal en el arreglo en la posición aleatoria
-    	addi $t0, $t0, -1    # Decrementar contador de chacales restantes
+    	sw $t5, 0($t3)       # Guardar un chacal en el arreglo en la posición 
+    	addi $t0, $t0, -1    # Decrementar contador de tesoros restantes
     	b end_fill           # Saltar al final del bucle
     
 place_chacal:
 	beq $t1, $zero, init_loop
     	li $t5, -1
-    	sw $t5, 0($t3)       # Guardar un premio en el arreglo en la posición aleatoria
-	addi $t1, $t1, -1    # Decrementar contador de tesoros restantes
+    	sw $t5, 0($t3)       # Guardar un chacal en el arreglo
+	addi $t1, $t1, -1    # Decrementar contador de chacales restantes
 
 end_fill:
 	addi $t3, $t3, 4     # Mover al siguiente elemento del arreglo
@@ -181,10 +182,42 @@ generar_numero:
 
 # Verificar el movimiento del usuario (COMPLETAR)
 check_move:
+	li $t0, 0
     	add $t0,$t0, $v0
-    	move $a0,$v0
-      	li $v0, 1
-    	syscall
+    	#addi $t0,$t0,-1
+    	sll $t3, $t0, 2
+    	la $t1, board
+    	la $t2, status
     	
-    	jr $ra
+    	# tomar en cuenta offset
+    	add $t1,$t1,$t3
+    	add $t2,$t2,$t3
+    	lw $t4, 0($t1)
+    	lw $t5, 0($t2)
+    	
+    	li $t6, 100
+    	
+    	beq $t4,$t6, aumento_tesoro
+	
+	lw $t7, chacales_enc
+	la $t8, chacales_enc
+	addi $t7,$t7,1
+	sw $t7, 0($t8)  
+salto:	
+	bne $t5,$zero,juego
+    	sw $t4, 0($t2)
+    	j juego
+aumento_tesoro:
+	lw $t7, tesoros_enc
+	la $t8, tesoros_enc
+	addi $t7,$t7,1
+	sw $t7, 0($t8)    	
+    	j salto	
+    	
+    	
+    	
+    	
+    	
+    	
+    	
     	
