@@ -9,12 +9,15 @@
 	tesoros_enc: .word 0	   # Tesoros encontrado
 	num_descubiertas: .word 0  # Número de casillas descubiertas
 	num_dados_rep: .word 0
+	ult_numero: .word -1  # Último número generado por el dado
+	rep_count: .word 0    # Contador de repeticiones del último número
 	
 	separator: .asciiz " | "	# Separador entre elementos
 	newline: .asciiz "\n"		# Nueva línea al final
 	msg_intro:  .asciiz "Bienvenido al Juego de Chacales\n"
 	msg_ganar:  .asciiz "Has ganado $"
 	msg_perder: .asciiz "Has perdido. Encontraste todos los chacales\n"
+	msg_perder_por_repeticion: .asciiz "Has perdido. Haz repetido el numero del dado 3 veces consecutivas\n"
 	msg_continuar: .asciiz "¿Deseas continuar jugando? (s/n): "
 	msg_turno:  .asciiz "Casillas descubiertas: "
 	msg_dinero: .asciiz "Dinero acumulado: $"
@@ -22,6 +25,7 @@
 	msg_girar: .asciiz "Girar Dado (s/n): "
 	msg_salida: .asciiz "Vuelva a jugar pronto..."
 	msg_invalida: .asciiz "Entrada no válida, vuelva a intentarlo\n"
+	msg_valor_dado: .asciiz "El dado ha sacado el valor: "
 
 .text
 main: 
@@ -33,6 +37,8 @@ main:
 
 juego:
 	jal display_board	#mostrar tablero
+	jal game_status
+
 	jal get_input		#obtener entrada
 	
 	# Procesar el movimiento
@@ -45,6 +51,12 @@ juego:
     	bge $t2, 12, fin_perder    # Si todas las casillas están descubiertas y no ha ganado, pierde
     	bge $t1, 4, fin_perder     # Si encontró todos los chacales, pierde
     	blt $t0, 4, juego          # Si aún no ha encontrado 4 tesoros, continúa jugando
+	bge $t0, 8, fin_ganar      # Si ya encontro los 8 tesoros entonces gana
+	
+    	
+    	# Mostrar tablero actualizado
+	jal display_board
+	jal game_status
     	
     	# Si ha encontrado 4 tesoros, preguntar si quiere continuar
     	li $v0, 4
@@ -58,10 +70,16 @@ juego:
     
     	lb $t3, 0($a0)
     
-    	beq $t3, 's', juego
+    	beq $t3, 's', continuar
     	beq $t3, 'n', fin_ganar
+	
+		
+continuar:
+	j juego
 		
 fin_ganar:
+	# Mostrar tablero actualizado
+	jal display_board
 	li $v0, 4
     	la $a0, msg_ganar
     	syscall
@@ -71,8 +89,18 @@ fin_ganar:
     	j fin
 
 fin_perder:
+	# Mostrar tablero actualizado
+	jal display_board
 	li $v0, 4
     	la $a0, msg_perder
+    	syscall
+    	j fin
+    	
+fin_perder_por_repeticion:
+	# Mostrar tablero actualizado
+	jal display_board
+	li $v0, 4
+    	la $a0, msg_perder_por_repeticion
     	syscall
     	j fin
 
@@ -148,6 +176,7 @@ display_end:
 	la $a0, newline      # Imprimir una nueva línea al final
     	li $v0, 4            # syscall para imprimir string
     	syscall
+    	
     	jr $ra
     	
 
@@ -177,13 +206,55 @@ generar_numero:
 	li $v0, 42           # Llamar al generador de números aleatorios
     	li $a1, 12        # Argumento para el número aleatorio (total de elementos)
     	syscall              # Generar número aleatorio
-    	move $v0, $a0
-    	jr $ra
+    	move $s0, $a0
+    	#li $s0, 1 for test
+    	# Mostrar el mensaje del valor del dado
+    	li $v0, 4
+    	la $a0, msg_valor_dado
+    	syscall
+    
+    	li $v0, 1
+    	move $a0, $s0
+    	syscall
+    	
+    	la $a0, newline      # Imprimir una nueva línea al final
+    	li $v0, 4            # syscall para imprimir string
+    	syscall
+    	
+    	# Verificar si el número generado se ha repetido tres veces consecutivas
+    	lw $s1, ult_numero
+    	lw $s2, rep_count
+    
+    	beq $s0, $s1, aumentar_contador
+    	j reset_contador
+    	
+    	#move $v0, $a0
+    	#jr $ra
+    	
+aumentar_contador:
+    addi $s2, $s2, 1
+    sw $s2, rep_count
+    
+    li $s3, 3
+    beq $s2, $s3, fin_perder_por_repeticion
+    j continuar_juego
+    
+reset_contador:
+    li $s2, 1
+    sw $s2, rep_count
+    sw $s0, ult_numero
+    
+continuar_juego:
+    
+    
+    move $v0, $s0
+    jr $ra
 
 # Verificar el movimiento del usuario (COMPLETAR)
 check_move:
 	li $t0, 0
     	add $t0,$t0, $v0
+
     	#addi $t0,$t0,-1
     	sll $t3, $t0, 2
     	la $t1, board
@@ -195,29 +266,71 @@ check_move:
     	lw $t4, 0($t1)
     	lw $t5, 0($t2)
     	
-    	li $t6, 100
+    	bne $t5, $zero , salto
     	
-    	beq $t4,$t6, aumento_tesoro
-	
-	lw $t7, chacales_enc
-	la $t8, chacales_enc
-	addi $t7,$t7,1
-	sw $t7, 0($t8)  
-salto:	
-	bne $t5,$zero,juego
     	sw $t4, 0($t2)
-    	j juego
+    	
+    	lw $t7, num_descubiertas
+	addi $t7, $t7, 1
+	sw $t7, num_descubiertas
+    	
+    	
+    	# Si la casilla contiene un tesoro (valor 100)
+	li $t6, 100
+	beq $t4, $t6, aumento_tesoro
+
+	# Si la casilla contiene un chacal (valor -1)
+	li $t6, -1
+	beq $t4, $t6, aumento_chacal
+	
+	j salto
+    	 
+salto:	
+	j juego
+	
 aumento_tesoro:
 	lw $t7, tesoros_enc
-	la $t8, tesoros_enc
-	addi $t7,$t7,1
-	sw $t7, 0($t8)    	
-    	j salto	
+	addi $t7, $t7, 1
+	sw $t7, tesoros_enc
+	
+	# Actualizar el dinero ganado
+	lw $t8, dinero
+	addi $t8, $t8, 100  # Asume que cada tesoro vale 100
+	sw $t8, dinero
+
+	jr $ra
     	
+aumento_chacal:
+	lw $t7, chacales_enc
+	addi $t7, $t7, 1
+	sw $t7, chacales_enc
+	
+	jr $ra
+	
+game_status:
+	 # Mostrar dinero acumulado y chacales encontrados
+    	li $v0, 4
+    	la $a0, msg_dinero
+    	syscall
+
+    	lw $a0, dinero
+   	 li $v0, 1
+    	syscall
+    
+    	la $a0, newline      # Imprimir una nueva línea al final
+    	li $v0, 4            # syscall para imprimir string
+    	syscall
+    
+    	li $v0, 4
+    	la $a0, msg_chacales
+    	syscall
+    
+    	lw $a0, chacales_enc
+    	li $v0, 1
+    	syscall
     	
+    	la $a0, newline      # Imprimir una nueva línea al final
+    	li $v0, 4            # syscall para imprimir string
+    	syscall
     	
-    	
-    	
-    	
-    	
-    	
+    	jr $ra
